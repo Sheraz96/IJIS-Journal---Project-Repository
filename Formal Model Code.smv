@@ -1,0 +1,368 @@
+MODULE v2x_app()
+
+	VAR
+
+		v2x_app_state: {idle, transmitting_to_core};
+
+	ASSIGN
+		init(v2x_app_state) := idle;
+		next(v2x_app_state) :=
+		  case
+			v2x_app_state = idle: transmitting_to_core;
+			v2x_app_state = transmitting_to_core: idle;
+			TRUE: v2x_app_state;
+		  esac;
+
+MODULE core_network(v2x_app_state)
+	
+	VAR
+
+		_5g_core_network_state: {idle, routing_data, forwarding_to_bs, transmitting_data};
+
+	ASSIGN
+		init(_5g_core_network_state) := idle;
+		next(_5g_core_network_state) :=
+			case
+				_5g_core_network_state = idle & v2x_app_state = transmitting_to_core: routing_data;
+
+				_5g_core_network_state = routing_data: forwarding_to_bs;   
+				_5g_core_network_state = forwarding_to_bs: transmitting_data;  
+				_5g_core_network_state = transmitting_data: idle;
+				TRUE: _5g_core_network_state;
+			 esac;
+
+MODULE base_station(_5g_core_network_state)
+
+	VAR
+
+		base_station_state: {idle, receiving_core, transmitting_to_veh_A, transmitting_to_veh_B, forwarding_to_rsu};
+
+	ASSIGN
+		init(base_station_state) := idle;
+		next(base_station_state) :=
+			case
+				base_station_state = idle & _5g_core_network_state = transmitting_data: {receiving_core, forwarding_to_rsu};
+				base_station_state = {receiving_core} : {transmitting_to_veh_A, transmitting_to_veh_B};
+				base_station_state in {forwarding_to_rsu, transmitting_to_veh_A, transmitting_to_veh_B} : idle;  
+				TRUE: base_station_state;
+			esac;
+
+MODULE iot_device()
+
+	VAR
+		iot_device_state: {idle, transmitting_data_conditional};
+		iot_data_value: 0..10;
+		sps_timer: 0..1;
+		attacker_block: 0..5;
+
+	ASSIGN
+		init(iot_device_state) := idle;
+		init(iot_data_value) := 0; -- Initial data value
+		init(sps_timer) := 1;      -- Timer starts active
+		init(attacker_block) := 0;
+
+		next(iot_device_state) := 
+			case
+				iot_device_state = idle : transmitting_data_conditional;
+				iot_device_state = transmitting_data_conditional : idle;
+				TRUE : iot_device_state;
+			esac;
+
+		next(attacker_block) :=
+			case
+				sps_timer = 0 : {0, 1, 2, 3, 4, 5};
+				TRUE : attacker_block;
+			esac;
+			  
+		next(iot_data_value) :=
+			case
+				iot_device_state = idle: {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+				TRUE: iot_data_value; 
+			esac;
+
+		next(sps_timer) := 
+			case
+				sps_timer = 1: 0;
+				sps_timer = 0: 1;
+			esac;
+
+
+MODULE vru(obu_a_state)
+
+	VAR
+
+		pedestrian_phone_state: {idle, transmitting_vru_data};
+
+	ASSIGN
+		init(pedestrian_phone_state) := idle;
+		next(pedestrian_phone_state) := 
+			case	
+				pedestrian_phone_state = idle & obu_a_state = receiving_obuA : transmitting_vru_data;
+				pedestrian_phone_state = transmitting_vru_data : idle;
+				TRUE : pedestrian_phone_state;
+			esac;
+
+
+MODULE rsu(iot_device_state, obu_a_state, obu_b_state, base_station_state, iot_data_value, attacker_block, DATA_THRESHOLD, CRITICAL_BLOCK)
+
+	VAR
+		rsu_state: {idle, receiving_data, receiving_from_bs, forwarding_data, unavailable};
+
+	
+	DEFINE
+		Attack_active := 
+			iot_device_state = transmitting_data_conditional & (iot_data_value > DATA_THRESHOLD | attacker_block = CRITICAL_BLOCK);
+
+	DEFINE 
+		Legit_iot_trans :=
+			iot_device_state = transmitting_data_conditional & !Attack_active;
+
+	DEFINE
+		SOURCE_A := obu_a_state = transmitting_rsu_dataA;
+		SOURCE_B := obu_b_state = transmitting_rsu_dataB;
+		SOURCE_IOT := Legit_iot_trans;
+
+
+	ASSIGN
+		init(rsu_state) := idle;
+		next(rsu_state) :=
+			case
+				rsu_state = idle & Attack_active : unavailable; 
+				
+				rsu_state = unavailable & !Attack_active: idle;
+
+				rsu_state = idle & !Attack_active & SOURCE_A & SOURCE_B & SOURCE_IOT : receiving_data;
+
+				rsu_state = idle & !Attack_active & SOURCE_A & SOURCE_B : receiving_data;
+
+				rsu_state = idle & !Attack_active & SOURCE_A & SOURCE_IOT : receiving_data;
+
+				rsu_state = idle & !Attack_active & SOURCE_B & SOURCE_IOT : receiving_data;
+
+				rsu_state = idle & !Attack_active & (SOURCE_A | SOURCE_B | SOURCE_IOT) : receiving_data;
+
+				rsu_state = idle & !Attack_active & base_station_state = forwarding_to_rsu : receiving_from_bs;
+				rsu_state in {receiving_data, receiving_from_bs}: forwarding_data;
+				rsu_state = forwarding_data: idle;
+				TRUE: rsu_state;	
+			esac;
+
+
+--vehicle A components
+
+MODULE obu_a(cgu_a_state, rsu_state, obu_b_state)
+
+-- discuss if you need to add transmitting_obu_to_obu as two modules have same variables
+
+	VAR
+
+		obu_a_state: {idle, receiving_obuA, transmitting_obuA_to_obuB, transmitting_to_vru, transmitting_rsu_dataA};
+
+	ASSIGN
+		init(obu_a_state) := idle;
+		next(obu_a_state) := 
+			case
+				obu_a_state = idle & (cgu_a_state = transmitting_obuA | obu_b_state = transmitting_obuB_to_obuA | rsu_state = forwarding_data): receiving_obuA;
+				obu_a_state = receiving_obuA: {transmitting_obuA_to_obuB, transmitting_to_vru, transmitting_rsu_dataA};
+				obu_a_state in {transmitting_obuA_to_obuB, transmitting_to_vru, transmitting_rsu_dataA}: idle;
+				TRUE : obu_a_state;
+			esac;
+
+MODULE tcu_a(base_station_state, cgu_a_state)
+
+	VAR
+
+		tcu_a_state: {idle, receiving_bs_data, transmitting_cgu, receiving_cgu};
+
+	ASSIGN
+		init(tcu_a_state) := idle;
+		next(tcu_a_state) := 
+			case	
+				tcu_a_state = idle & base_station_state = transmitting_to_veh_A: receiving_bs_data;
+				tcu_a_state = receiving_bs_data: transmitting_cgu;
+				tcu_a_state = transmitting_cgu & cgu_a_state = transmitting_to_tcu: receiving_cgu;
+				tcu_a_state = receiving_cgu: idle;
+				TRUE : tcu_a_state;
+			esac;
+
+MODULE cgu_a(tcu_a_state, infotainment_a_state, adas_a_state)
+
+	VAR
+
+		cgu_a_state: {idle, receiving_tcu, transmitting_to_tcu, transmitting_obuA, transmitting_infotainment, transmitting_adas, receiving_infotainment, receiving_adas};
+	
+	ASSIGN
+		init(cgu_a_state) := idle;
+		next(cgu_a_state) := 
+			case		
+				cgu_a_state = idle & tcu_a_state = transmitting_cgu : receiving_tcu;
+				cgu_a_state = idle & infotainment_a_state = processing_data : receiving_infotainment;
+				cgu_a_state = idle & adas_a_state = processing_cgu_data : receiving_adas;
+				cgu_a_state = receiving_tcu : {transmitting_obuA, transmitting_infotainment, transmitting_adas};
+				cgu_a_state = receiving_adas : {transmitting_obuA , transmitting_to_tcu};
+				cgu_a_state = receiving_infotainment : {transmitting_obuA, transmitting_to_tcu};
+				cgu_a_state in {transmitting_obuA, transmitting_infotainment, transmitting_adas, transmitting_to_tcu}: idle;
+				TRUE : cgu_a_state;
+			esac;
+
+MODULE adas_a(cgu_a_state)
+
+	VAR
+		adas_a_state: {idle, receiving_cgu_data, processing_cgu_data, transmitting_to_ecu};
+
+	ASSIGN
+		init(adas_a_state) := idle;
+		next(adas_a_state) := 
+			case	
+				adas_a_state = idle & cgu_a_state = transmitting_adas: receiving_cgu_data;
+				adas_a_state = receiving_data: processing_cgu_data;
+				adas_a_state = processing_cgu_data : transmitting_to_ecu;
+				adas_a_state = transmitting_to_ecu: idle;
+				TRUE: adas_a_state;
+			esac;
+
+
+MODULE infotainment_a(cgu_a_state )
+
+	VAR
+		infotainment_a_state: {idle, receiving_data, processing_data};
+
+	ASSIGN
+		init(infotainment_a_state):= idle;
+		next(infotainment_a_state):=
+			case	
+				infotainment_a_state = idle & cgu_a_state = transmitting_infotainment : receiving_data;
+				infotainment_a_state = receiving_data : processing_data;
+				infotainment_a_state = processing_data : idle;
+				TRUE: infotainment_a_state;
+			esac;
+
+
+MODULE radar_a(adas_a_state)
+
+	VAR
+
+		radar_a_state: {idle, receiving_control_data, processing_control_data};
+
+	ASSIGN
+		init(radar_a_state) := idle;
+		next(radar_a_state) :=
+			case
+				radar_a_state = idle & adas_a_state = transmitting_to_ecu: receiving_control_data;
+				radar_a_state = receiving_control_data: processing_control_data;
+				radar_a_state = processing_control_data: idle;
+				TRUE: radar_a_state;
+			esac;
+
+
+--vehicle B components
+
+MODULE obu_b(obu_a_state)
+
+	VAR
+
+		obu_b_state: {idle, receiving_obuB, transmitting_obuB_to_obuA, transmitting_rsu_dataB};
+
+	ASSIGN
+		init(obu_b_state) := idle;
+		next(obu_b_state) := 
+			case
+				obu_b_state = idle & (obu_a_state = transmitting_obuA_to_obuB) : receiving_obuB;
+				obu_b_state = receiving_obuB: {transmitting_obuB_to_obuA, transmitting_rsu_dataB};
+				obu_b_state in {transmitting_obuB_to_obuA, transmitting_rsu_dataB}: idle;
+				TRUE : obu_b_state;
+			esac;
+
+
+
+MODULE main
+
+VAR
+	V1:  v2x_app();
+	CN1:  core_network(V1.v2x_app_state);
+	BS1:  base_station(CN1._5g_core_network_state);
+	IOT:  iot_device();
+	VRU:  vru(OA.obu_a_state);
+	R1:  rsu(IOT.iot_device_state, OA.obu_a_state, OB.obu_b_state, BS1.base_station_state, IOT.iot_data_value, IOT.attacker_block, DATA_THRESHOLD, CRITICAL_BLOCK);
+
+	OA:  obu_a(CA.cgu_a_state, R1.rsu_state, OB.obu_b_state);
+	TA:  tcu_a(BS1.base_station_state, CA.cgu_a_state);
+	CA:  cgu_a(TA.tcu_a_state, IA.infotainment_a_state, AA.adas_a_state);  
+	AA:  adas_a(CA.cgu_a_state);
+	IA:  infotainment_a(CA.cgu_a_state);
+	RA:  radar_a(AA.adas_a_state);
+	OB:  obu_b(OA.obu_a_state);
+
+
+DEFINE
+	DATA_THRESHOLD := 5;
+	NUM_RESOURCE_BLOCKS := 5;
+	CRITICAL_BLOCK := 0;
+
+--F1
+--SPEC AG ((IOT.iot_device_state = transmitting_data_conditional & (IOT.iot_data_value > 5) -> AX R1.rsu_state = unavailable))
+
+--F2
+--SPEC AG ((IOT.iot_device_state = transmitting_data_conditional & (IOT.attacker_block = 0) -> AX R1.rsu_state = unavailable))
+
+--F3
+--SPEC AG ((R1.rsu_state = idle & IOT.iot_device_state = transmitting_data_conditional & (IOT.iot_data_value = 7) -> AF R1.rsu_state = unavailable))
+
+--F4
+--SPEC AG (R1.rsu_state = idle & IOT.iot_device_state = transmitting_data_conditional -> EF R1.rsu_state = unavailable)
+
+--F5
+--SPEC AG (R1.rsu_state = idle & IOT.iot_device_state = transmitting_data_conditional -> AF R1.rsu_state = unavailable)
+
+--F6
+--SPEC AG ((R1.rsu_state = idle & IOT.iot_data_value = 5 & IOT.iot_device_state = transmitting_data_conditional) -> AX (R1.rsu_state = unavailable))
+
+--F7
+--SPEC AG ((BS1.base_station_state != transmitting_to_veh_A) -> AG (TA.tcu_a_state != receiving_bs_data))
+
+--F8
+--SPEC AG ((TA.tcu_a_state = idle & BS1.base_station_state = transmitting_to_veh_A) -> AX TA.tcu_a_state = receiving_bs_data)
+
+--F9
+--SPEC AG ((TA.tcu_a_state = idle & BS1.base_station_state = transmitting_to_veh_A) -> AG TA.tcu_a_state = receiving_bs_data)
+
+--F10
+--SPEC AG (CN1._5g_core_network_state = transmitting_data -> EF BS1.base_station_state = forwarding_to_rsu)
+
+--F11
+--SPEC AG (CN1._5g_core_network_state = transmitting_data -> AF BS1.base_station_state = forwarding_to_rsu)
+
+--F12
+--SPEC AF BS1.base_station_state = forwarding_to_rsu
+
+--F13
+--SPEC AF(CN1._5g_core_network_state=routing_data)
+
+--F14
+--SPEC AG ((IOT.iot_device_state = transmitting_data_conditional) -> AF (R1.rsu_state = unavailable))
+
+--F15
+--SPEC AG ((R1.rsu_state = idle & R1.Attack_active) -> AF (R1.rsu_state = unavailable))
+
+--F16
+--SPEC AG (R1.Attack_active -> AF R1.rsu_state = unavailable)
+
+--F17
+--SPEC AG (R1.rsu_state = idle & R1.rsu_state = forwarding_data -> AF OA.obu_a_state = receiving_obuA)
+
+--F18
+--SPEC AG (R1.rsu_state = forwarding_data -> AF OA.obu_a_state = receiving_obuA)
+
+--F19		
+--SPEC AG (V1.v2x_app_state = transmitting_to_core)
+
+--F20
+--SPEC AF (V1.v2x_app_state = transmitting_to_core)
+
+--F21
+--SPEC AG (R1.rsu_state = forwarding_data -> AF R1.rsu_state = idle)
+
+
+
+
+

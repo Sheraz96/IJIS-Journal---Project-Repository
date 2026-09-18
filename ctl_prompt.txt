@@ -1,0 +1,60 @@
+You are a Computational Tree Logic (CTL) expert. The answers always need to follow the following output format and always have to provide a CTL formula. You may repeat the answers.
+Translate the following Natural Language sentences into a CTL formula and explain your translation step by step.
+Always remember that A means "for all paths", E means "there exists a path", G means "Always/Globally", F means "Finally/eventually", X means "next state", U means "Until", which means EF means "possible finally", EG means "possible globally", AF means "Always finally", AG means "Always Globally".
+The formulas need to have lowercase letters for atomic propositions. Atomic proposition for a is "a", b is "b".
+
+Natural Language: State a can be reached.
+Given translations: {}
+Explanation: "State a" from the input translates to atomic proposition a. "can be reached" suggests that it is reachable and can stay active in the future, so the input translates to the temporal operator EF.
+Explanation Dictionary: {"State a" : "a", "can be reached" : "EF"}
+So, the final CTL translation is: EF a.FINISH
+
+Natural Language: State a cannot be reached.
+Given translations: {}
+Explanation: "State a" from the input translates to atomic proposition a. "cannot be reached" suggests that there exists a path where eventually state 'a' is not reached in the future, so the input translates to the temporal operator !EF.
+Explanation Dictionary: {"State a" : "a", "cannot be reached" : "!EF"}
+So, the final CTL translation is: EF !a.FINISH
+
+Natural Language: State a can never be reached.
+Given translations: {}
+Explanation: "State a" from the input translates to atomic proposition a. "can never be reached" means for all possible paths globally, state a can never be reached or is always false, so the input translates to temporal operator !AG.
+Explanation Dictionary: {"State a" : "a", "can never be reached" : "!AG"}
+So, the final CTL translation is: AG !a.FINISH
+
+Natural Language: State a possibly remain forever reachable.
+Given translations: {}
+Explanation: "State a" from the input translates to atomic proposition a. "possibly remain forever reachable" states that there exists atleast one path starting from the current state where state 'a' is reachable, hence translates to EF. Furthermore, it is always possible to eventually reach a 'a' state and this is possibly true for every state along that path.
+This is a global property, meaning (EF a) must hold at every state on a given path. Hence, it translates to EG(EF). This temporal translation is valid for the state you are dealing with.
+Explanation Dictionary: {"State a" : "a", "reachable" : "EF a", "possibly remain forever reachable" : "EG(EF)"}
+So, the final CTL translation is: EG(EF a).FINISH
+
+Natural Language: State a necessarily remain forever reachable.
+Given translations: {}
+Explanation: "State a" from the input translates to atomic proposition a. "necessarily remain forever" points towards a global scenario on all states of the path, hence translates to "AG". 
+"reachable" suggests that there exists a state eventually where a is true. Hence, translates to EF A. 
+Explanation Dictionary: {"State a" : "a", "reachable" : "EF a", "necessarily remain forever reachable" : "AG(EF)"}
+So, the final CTL translation is: AG(EF a).FINISH
+
+Natural Language: If an x state is reached, then it is possibly followed by a y state.
+Given translations:{}
+Explanation: “x state” from the input translates to the atomic proposition x. “is reached” implies that the system can be in state x. The phrase “if … then” introduces a conditional relationship, which is represented using implication (→). “possibly followed by a y state” indicates that from state x, there exists a path where eventually state y is reached, which corresponds to the CTL temporal operator EF. Since this condition must hold for all possible paths and all system states where x occurs, the universal quantifier AG is applied to the implication.
+Explanation Dictionary: {"x state" : "x", "possibly followed by a y state" : "EF y", "if … then" : "→", "for all paths globally" : "AG"}
+CTL Translation: AG(x -> EF y).FINISH
+
+Natural Language:If an x state is reached, then it is necessarily followed by a y state.
+Given translations:{}
+Explanation: “x state” from the input translates to the atomic proposition x. The phrase “is reached” indicates that the system can be in state x. The conditional phrase “if … then” introduces an implication between states. “necessarily followed by a y state” means that from state x, on all possible paths, state y will eventually be reached, which corresponds to the CTL temporal operator AF. Since this requirement must hold globally for every occurrence of state x across all execution paths, the universal global operator AG is applied to the implication.
+Explanation Dictionary: {"x state" : "x", "necessarily followed by a y state" : "AF y", "if … then" : "→", "for all paths globally" : "AG"}
+CTL Translation: AG(x -> AF y).FINISH
+
+Natural Language: An y state is reachable and is possibly preceded at some time by an x state.
+Given translations:{}
+Explanation: “y state” from the input translates to the atomic proposition y. The phrase “is reachable” indicates that there exists a path where state y can eventually be reached, which corresponds to the temporal operator EF. “possibly preceded at some time by an x state” means that there exists a path where state x occurs before reaching state y. This relationship is captured by expressing that state x holds at some point and is followed by a future occurrence of state y, represented using the conjunction x ∧ EF y. Since the overall requirement is that such a behavior exists on at least one path, the outer existential temporal operator EF is applied.
+Explanation Dictionary: {"y state" : "y", "is reachable" : "EF", "possibly preceded at some time by an x state" : "x ∧ EF y"}
+CTL Translation: EF(x ∧ EF y).FINISH
+
+Natural Language: An y state is reachable and is possibly preceded all the time by an x state.
+Given translations: {}
+Explanation: “y state” from the input translates to the atomic proposition y. The phrase “is reachable” indicates that there exists a path where state y is eventually reached. “possibly preceded all the time by an x state” means that along some execution path, state x continuously holds until state y is reached. This behavior is captured by the Until temporal operator U, where x U y specifies that x remains true at all states prior to the occurrence of y. Since the requirement is existential (i.e., such a path may exist), the existential path quantifier E is applied.
+Explanation Dictionary: {"y state" : "y", "is reachable" : "E", "possibly preceded all the time by an x state" : "x U y"}
+CTL Translation: E(x U y).FINISH
